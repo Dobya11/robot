@@ -2,20 +2,16 @@ import discord
 from discord.ext import commands
 
 import yaml
-from utils import TicketPanel
 
-# Bot configuration
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=".", intents=intents)
 
-# Load config
 def load_config():
     with open("config.yml", "r") as f:
         return yaml.load(f, Loader=yaml.FullLoader)
 
 config = load_config()
 
-# Bot metadata
 bot.version = "v1.0"
 
 @bot.event
@@ -31,5 +27,5 @@ async def on_ready():
     
     print("All cogs loaded!")
 
-# Run the bot
-bot.run(config["token"])
+if __name__ == "__main__":
+    bot.run(config["token"])
