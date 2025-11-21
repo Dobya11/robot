@@ -24,5 +24,10 @@ async def on_ready():
 
     await bot.tree.sync()
 
+@bot.event
+async def on_command_error(ctx: commands.Context, error: commands.CommandError):
+    if isinstance(error, commands.CommandNotFound):
+        pass 
+
 if __name__ == "__main__":
     bot.run(os.getenv("TOKEN"))
