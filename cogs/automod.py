@@ -14,11 +14,14 @@ class AutoMod(commands.Cog):
         if message.author.bot:
             return
 
+        if any(role.id == 1442149158390595698 for role in message.author.roles) or message.author.guild_permissions.administrator:
+            return
+
         DISCORD_INVITE_URL_REGEX = r"(https?:\/\/)?(www\.)?(discord\.gg|discordapp\.com\/invite)\/[a-zA-Z0-9]+"
         if re.search(DISCORD_INVITE_URL_REGEX, message.content):
             await message.delete()
             await message.channel.send(
-                f"{message.author.mention}, posting Discord invite links is not allowed! Please DM @itsneil if you would like to post an invite to your server."
+                f"{message.author.mention}, posting Discord invite links is not allowed! Please DM <@702385226407608341> if you would like to post an invite to your server."
             )
             clean_content = re.sub(DISCORD_INVITE_URL_REGEX, "[invite link removed]", message.content)
             await message.channel.send(
