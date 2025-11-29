@@ -19,12 +19,10 @@ async def load_cogs():
             print(f"Loaded cog: {filename}")
 
 @bot.event
-async def on_load():
+async def on_ready():
     bot.database = Database()
     await bot.database.init_db()
 
-@bot.event
-async def on_ready():
     await load_cogs()
     print(f"{bot.user} is ready!")
 
