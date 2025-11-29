@@ -167,12 +167,14 @@ class ConfirmCloseView(discord.ui.View):
                     log_embed.add_field(name="Ticket Owner", value=ticket_owner.mention if ticket_owner else "Unknown", inline=True)
                     log_embed.add_field(name="Closed by", value=interaction.user.mention, inline=True)
                     
-                    message_count = len(await channel.history(limit=None).flatten())
+                    message_count = 0
+                    async for _ in channel.history(limit=None):
+                        message_count += 1
                     log_embed.add_field(name="Messages", value=str(message_count), inline=True)
                     
                     await logs_channel.send(embed=log_embed, view=TranscriptView(transcript_url))
                 
-                # Send to staff channel
+                # Send to staff channel - same link, simple embed
                 staff_channel = interaction.guild.get_channel(1440173445739446366)
                 if staff_channel:
                     message_count = len(await channel.history(limit=None).flatten())
@@ -182,48 +184,26 @@ class ConfirmCloseView(discord.ui.View):
                     
                     staff_embed = discord.Embed(
                         title="🎫 Ticket Closed - Staff Notification",
-                        description=f"**Ticket:** `{channel.name}`\n**Ticket ID:** `{ticket_info['id']}`\n**Status:** Closed",
+                        description=f"**Ticket:** `{channel.name}` (ID: `{ticket_info['id']}`)",
                         color=discord.Color.red(),
                         timestamp=discord.utils.utcnow()
                     )
                     
-                    if ticket_owner:
-                        staff_embed.add_field(
-                            name="👤 Ticket Owner",
-                            value=f"{ticket_owner.mention}\n**Username:** `{ticket_info['username']}`\n**ID:** `{ticket_owner.id}`\n**Account Created:** {discord.utils.format_dt(ticket_owner.created_at, 'R')}",
-                            inline=True
-                        )
-                    else:
-                        staff_embed.add_field(
-                            name="👤 Ticket Owner",
-                            value=f"**Username:** `{ticket_info['username']}`\n**ID:** `{ticket_info['user_id']}`\n*User no longer in server*",
-                            inline=True
-                        )
-                    
                     staff_embed.add_field(
-                        name="🔒 Closed By",
-                        value=f"{interaction.user.mention}\n**Role:** {interaction.user.top_role.mention}\n**Time:** {discord.utils.format_dt(discord.utils.utcnow())}",
+                        name="👤 Owner", 
+                        value=ticket_owner.mention if ticket_owner else f"`{ticket_info['username']}`", 
                         inline=True
                     )
-                    
                     staff_embed.add_field(
-                        name="📊 Ticket Stats",
-                        value=f"**Messages:** {message_count}\n**Duration:** {str(ticket_duration).split('.')[0]}\n**Created:** {discord.utils.format_dt(ticket_created)}",
+                        name="🔒 Closed by", 
+                        value=interaction.user.mention, 
                         inline=True
                     )
-                    
-                    # Get current ticket stats
-                    ticket_stats = await db.get_ticket_stats(interaction.guild.id)
                     staff_embed.add_field(
-                        name="🏢 Server Stats",
-                        value=f"**Open Tickets:** {ticket_stats['open']}\n**Total Tickets:** {ticket_stats['total']}\n**Total Members:** {interaction.guild.member_count}",
+                        name="📊 Stats", 
+                        value=f"Messages: {message_count}\nDuration: {str(ticket_duration).split('.')[0]}", 
                         inline=True
                     )
-                    
-                    staff_embed.set_footer(text=f"Ticket ID: {ticket_info['id']}")
-                    
-                    if ticket_owner and ticket_owner.avatar:
-                        staff_embed.set_thumbnail(url=ticket_owner.avatar.url)
                     
                     await staff_channel.send(embed=staff_embed, view=TranscriptView(transcript_url))
             
@@ -263,10 +243,14 @@ class Tickets(commands.Cog):
             print(f"Error uploading transcript: {e}")
             return None
 
-    @commands.Cog.listener()
-    async def on_ready(self):
+    async def cog_load(self):
+        """Add persistent views when the cog loads"""
         self.bot.add_view(TicketView())
         self.bot.add_view(TicketControlView())
+        print("Ticket views added!")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
         print("Ticket system loaded!")
 
     @app_commands.command(name="ticket-panel", description="Create a ticket panel")
@@ -299,7 +283,6 @@ class Tickets(commands.Cog):
             await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
             return
 
-        # Get ticket info from database
         ticket_info = await self.bot.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_info:
             await interaction.response.send_message("Ticket not found in database!", ephemeral=True)
@@ -313,8 +296,6 @@ class Tickets(commands.Cog):
             return
 
         await interaction.channel.set_permissions(user, read_messages=True, send_messages=True)
-        
-        # Add to database
         await self.bot.db.add_ticket_participant(ticket_info['id'], user.id, interaction.user.id)
         
         await interaction.response.send_message(f"{user.mention} has been added to this ticket.")
@@ -326,7 +307,6 @@ class Tickets(commands.Cog):
             await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
             return
 
-        # Get ticket info from database
         ticket_info = await self.bot.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_info:
             await interaction.response.send_message("Ticket not found in database!", ephemeral=True)
@@ -344,8 +324,6 @@ class Tickets(commands.Cog):
             return
 
         await interaction.channel.set_permissions(user, overwrite=None)
-        
-        # Remove from database
         await self.bot.db.remove_ticket_participant(ticket_info['id'], user.id)
         
         await interaction.response.send_message(f"{user.mention} has been removed from this ticket.")
@@ -356,7 +334,6 @@ class Tickets(commands.Cog):
             await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
             return
 
-        # Get ticket info from database
         ticket_info = await self.bot.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_info:
             await interaction.response.send_message("Ticket not found in database!", ephemeral=True)
@@ -382,7 +359,6 @@ class Tickets(commands.Cog):
             await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
             return
 
-        # Get ticket info from database
         ticket_info = await self.bot.db.get_ticket_by_channel(interaction.channel.id)
         if not ticket_info:
             await interaction.response.send_message("Ticket not found in database!", ephemeral=True)

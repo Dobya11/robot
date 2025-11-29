@@ -58,7 +58,6 @@ class Database:
                 )
             """)
 
-            # Tickets table
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tickets (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +73,6 @@ class Database:
                 )
             """)
             
-            # Ticket participants (for add/remove user tracking)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS ticket_participants (
                     ticket_id INTEGER NOT NULL,
