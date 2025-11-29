@@ -58,6 +58,34 @@ class Database:
                 )
             """)
 
+            # Tickets table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS tickets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    channel_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    closed_at TEXT,
+                    closed_by INTEGER,
+                    status TEXT DEFAULT 'open',
+                    transcript_url TEXT
+                )
+            """)
+            
+            # Ticket participants (for add/remove user tracking)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS ticket_participants (
+                    ticket_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    added_by INTEGER NOT NULL,
+                    added_at TEXT NOT NULL,
+                    PRIMARY KEY (ticket_id, user_id),
+                    FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+                )
+            """)
+
             await db.commit()
     
     # Warning methods
@@ -228,3 +256,113 @@ class Database:
             )
             row = await cursor.fetchone()
             return row is not None
+    
+    # Ticket methods
+    async def create_ticket(self, guild_id: int, channel_id: int, user_id: int, username: str) -> int:
+        """Create a new ticket record and return the ticket ID"""
+        timestamp = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO tickets (guild_id, channel_id, user_id, username, created_at) VALUES (?, ?, ?, ?, ?)",
+                (guild_id, channel_id, user_id, username, timestamp)
+            )
+            await db.commit()
+            return cursor.lastrowid
+
+    async def close_ticket(self, channel_id: int, closed_by: int, transcript_url: str = None) -> bool:
+        """Close a ticket by channel ID"""
+        timestamp = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "UPDATE tickets SET closed_at = ?, closed_by = ?, status = 'closed', transcript_url = ? WHERE channel_id = ?",
+                (timestamp, closed_by, transcript_url, channel_id)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def get_ticket_by_channel(self, channel_id: int) -> Optional[Dict]:
+        """Get ticket info by channel ID"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM tickets WHERE channel_id = ?",
+                (channel_id,)
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def get_open_tickets(self, guild_id: int) -> List[Dict]:
+        """Get all open tickets for a guild"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM tickets WHERE guild_id = ? AND status = 'open' ORDER BY created_at DESC",
+                (guild_id,)
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def get_user_tickets(self, guild_id: int, user_id: int, limit: int = 10) -> List[Dict]:
+        """Get recent tickets for a user"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM tickets WHERE guild_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT ?",
+                (guild_id, user_id, limit)
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def add_ticket_participant(self, ticket_id: int, user_id: int, added_by: int) -> bool:
+        """Add a participant to a ticket"""
+        timestamp = datetime.utcnow().isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            try:
+                await db.execute(
+                    "INSERT INTO ticket_participants (ticket_id, user_id, added_by, added_at) VALUES (?, ?, ?, ?)",
+                    (ticket_id, user_id, added_by, timestamp)
+                )
+                await db.commit()
+                return True
+            except sqlite3.IntegrityError:
+                return False
+
+    async def remove_ticket_participant(self, ticket_id: int, user_id: int) -> bool:
+        """Remove a participant from a ticket"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "DELETE FROM ticket_participants WHERE ticket_id = ? AND user_id = ?",
+                (ticket_id, user_id)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def get_ticket_stats(self, guild_id: int) -> Dict:
+        """Get ticket statistics for a guild"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Total tickets
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM tickets WHERE guild_id = ?",
+                (guild_id,)
+            )
+            total = (await cursor.fetchone())[0]
+
+            # Open tickets
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM tickets WHERE guild_id = ? AND status = 'open'",
+                (guild_id,)
+            )
+            open_count = (await cursor.fetchone())[0]
+
+            # Closed tickets
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM tickets WHERE guild_id = ? AND status = 'closed'",
+                (guild_id,)
+            )
+            closed_count = (await cursor.fetchone())[0]
+
+            return {
+                'total': total,
+                'open': open_count,
+                'closed': closed_count
+            }
