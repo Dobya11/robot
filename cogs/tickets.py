@@ -22,12 +22,10 @@ class TicketView(discord.ui.View):
         guild = interaction.guild
         user = interaction.user
         
-        # Clean username for channel name
         clean_username = re.sub(r'[^a-zA-Z0-9\-_]', '', user.display_name.lower())
         if not clean_username:
             clean_username = f"user{user.id}"
         
-        # Check for existing open ticket
         cog = interaction.client.get_cog('Tickets')
         db = cog.bot.db
         
@@ -50,12 +48,10 @@ class TicketView(discord.ui.View):
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
-        # Create channel with username
         channel_name = f"ticket-{clean_username}"
         counter = 1
         original_name = channel_name
         
-        # Handle duplicate names
         while discord.utils.get(guild.channels, name=channel_name):
             channel_name = f"{original_name}-{counter}"
             counter += 1
@@ -66,7 +62,6 @@ class TicketView(discord.ui.View):
             overwrites=overwrites
         )
 
-        # Store ticket in database
         ticket_id = await db.create_ticket(guild.id, channel.id, user.id, user.display_name)
 
         embed = discord.Embed(
@@ -114,7 +109,6 @@ class ConfirmCloseView(discord.ui.View):
         cog = interaction.client.get_cog('Tickets')
         db = cog.bot.db
         
-        # Get ticket info from database
         ticket_info = await db.get_ticket_by_channel(channel.id)
         if not ticket_info:
             await interaction.response.send_message("Ticket not found in database!", ephemeral=True)
@@ -138,77 +132,27 @@ class ConfirmCloseView(discord.ui.View):
             
             transcript_url = await cog.upload_transcript(transcript, filename)
             
-            # Update ticket in database
             await db.close_ticket(channel.id, interaction.user.id, transcript_url)
             
             if transcript_url:
-                # Send transcript to ticket owner
+                embed = discord.Embed(
+                    title="🎫 Ticket Transcript",
+                    description=f"Your ticket `{channel.name}` has been closed.\nYou can view the full transcript using the button below.",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(name="Ticket ID", value=f"`{ticket_info['id']}`", inline=True)
+                embed.add_field(name="Closed by", value=interaction.user.mention, inline=True)
+                embed.add_field(name="Closed at", value=discord.utils.format_dt(discord.utils.utcnow()), inline=True)
                 if ticket_owner:
                     try:
-                        embed = discord.Embed(
-                            title="🎫 Ticket Transcript",
-                            description=f"Your ticket `{channel.name}` has been closed.\nYou can view the full transcript using the button below.",
-                            color=discord.Color.blue()
-                        )
-                        embed.add_field(name="Ticket ID", value=f"`{ticket_info['id']}`", inline=True)
-                        embed.add_field(name="Closed by", value=interaction.user.mention, inline=True)
-                        embed.add_field(name="Closed at", value=discord.utils.format_dt(discord.utils.utcnow()), inline=True)
-                        
                         await ticket_owner.send(embed=embed, view=TranscriptView(transcript_url))
                     except discord.Forbidden:
                         pass
                 
-                # Send to ticket logs channel
-                logs_channel = discord.utils.get(interaction.guild.channels, name="ticket-logs")
+                logs_channel = interaction.guild.get_channel(1446583632465760456)
                 if logs_channel:
-                    log_embed = discord.Embed(
-                        title="🎫 Ticket Closed",
-                        description=f"Ticket `{channel.name}` has been closed.",
-                        color=discord.Color.orange()
-                    )
-                    log_embed.add_field(name="Ticket ID", value=f"`{ticket_info['id']}`", inline=True)
-                    log_embed.add_field(name="Ticket Owner", value=ticket_owner.mention if ticket_owner else "Unknown", inline=True)
-                    log_embed.add_field(name="Closed by", value=interaction.user.mention, inline=True)
-                    
-                    message_count = 0
-                    async for _ in channel.history(limit=None):
-                        message_count += 1
-                    log_embed.add_field(name="Messages", value=str(message_count), inline=True)
-                    
-                    await logs_channel.send(embed=log_embed, view=TranscriptView(transcript_url))
+                    await logs_channel.send(embed=embed, view=TranscriptView(transcript_url))
                 
-                staff_channel = interaction.guild.get_channel(1440173445739446366)
-                if staff_channel:
-                    message_count = len(await channel.history(limit=None).flatten())
-                    
-                    ticket_created = datetime.fromisoformat(ticket_info['created_at'])
-                    ticket_duration = discord.utils.utcnow().replace(tzinfo=None) - ticket_created
-                    
-                    staff_embed = discord.Embed(
-                        title="🎫 Ticket Closed - Staff Notification",
-                        description=f"**Ticket:** `{channel.name}` (ID: `{ticket_info['id']}`)",
-                        color=discord.Color.red(),
-                        timestamp=discord.utils.utcnow()
-                    )
-                    
-                    staff_embed.add_field(
-                        name="👤 Owner", 
-                        value=ticket_owner.mention if ticket_owner else f"`{ticket_info['username']}`", 
-                        inline=True
-                    )
-                    staff_embed.add_field(
-                        name="🔒 Closed by", 
-                        value=interaction.user.mention, 
-                        inline=True
-                    )
-                    staff_embed.add_field(
-                        name="📊 Stats", 
-                        value=f"Messages: {message_count}\nDuration: {str(ticket_duration).split('.')[0]}", 
-                        inline=True
-                    )
-                    
-                    await staff_channel.send(embed=staff_embed, view=TranscriptView(transcript_url))
-            
         except Exception as e:
             log.error(f"Error generating transcript: {e}")
         
