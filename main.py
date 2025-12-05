@@ -2,9 +2,15 @@ import discord
 from discord.ext import commands
 
 import os
+import logging
 from dotenv import load_dotenv
 from database import Database
+from logging_configuration import setup_logging
+
 load_dotenv()
+
+setup_logging()
+log = logging.getLogger(__name__)
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix=".", intents=intents)
@@ -16,7 +22,7 @@ async def load_cogs():
     for filename in os.listdir("./cogs"):
         if filename.endswith(".py"):
             await bot.load_extension(f"cogs.{filename[:-3]}")
-            print(f"Loaded cog: {filename}")
+            log.info(f"Loaded cog: {filename}")
 
 @bot.event
 async def on_ready():
@@ -24,14 +30,14 @@ async def on_ready():
     await bot.database.init_db()
 
     await load_cogs()
-    print(f"{bot.user} is ready!")
+    log.info(f"{bot.user} is ready!")
 
     await bot.tree.sync()
 
 @bot.event
 async def on_command_error(ctx: commands.Context, error: commands.CommandError):
     if isinstance(error, commands.CommandNotFound):
-        pass 
+        pass
 
 if __name__ == "__main__":
-    bot.run(os.getenv("TOKEN"))
+    bot.run(token=os.getenv("TOKEN"), log_handler=None)

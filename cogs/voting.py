@@ -4,6 +4,9 @@ from discord.ext import commands, tasks
 
 import asyncio
 from database import Database
+import logging
+
+log = logging.getLogger(__name__)
 
 class Voting(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -20,10 +23,10 @@ class Voting(commands.Cog):
     async def scan_existing_showcases(self):
         """Scan all messages in showcase channel and update database with current upvote counts"""
         if not self.showcase_channel:
-            print("Showcase channel not found")
+            log.warning("Showcase channel not found")
             return
         
-        print("Starting to scan existing showcases...")
+        log.info("Starting to scan existing showcases...")
         message_count = 0
         
         async for message in self.showcase_channel.history(limit=None):
@@ -41,15 +44,15 @@ class Voting(commands.Cog):
                     if not user.bot:
                         await self.db.log_upvote(user.id, message.id)
                         
-                print(f"Updated message {message.id} with {fire_reaction.count - 1} upvotes")
+                log.debug(f"Updated message {message.id} with {fire_reaction.count - 1} upvotes")
             
             message_count += 1
             
             if message_count % 10 == 0:
                 await asyncio.sleep(1)
-                print(f"Processed {message_count} messages...")
+                log.debug(f"Processed {message_count} messages...")
         
-        print(f"Finished scanning {message_count} messages")
+        log.info(f"Finished scanning {message_count} messages")
 
     @app_commands.command(name="sync_votes", description="Sync existing showcase votes to database")
     @app_commands.default_permissions(administrator=True)
@@ -101,11 +104,11 @@ class Voting(commands.Cog):
             try:
                 original_message = await self.showcase_channel.fetch_message(showcase['showcase_id'])
             except Exception as e:
-                print(e)
+                log.error(e)
                 continue
             
             if not original_message:
-                print("Original message not found")
+                log.info("Original message not found")
                 continue
             
             ranking_emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"#{i}"

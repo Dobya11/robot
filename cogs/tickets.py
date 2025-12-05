@@ -9,6 +9,9 @@ import aiohttp
 import aiofiles
 from datetime import datetime
 import re
+import logging
+
+log = logging.getLogger(__name__)
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -207,7 +210,7 @@ class ConfirmCloseView(discord.ui.View):
                     await staff_channel.send(embed=staff_embed, view=TranscriptView(transcript_url))
             
         except Exception as e:
-            print(f"Error generating transcript: {e}")
+            log.error(f"Error generating transcript: {e}")
         
         await asyncio.sleep(3)
         await channel.delete()
@@ -236,21 +239,21 @@ class Tickets(commands.Cog):
                         result = await response.json()
                         return f"{self.website_view_url}{filename}"
                     else:
-                        print(f"Upload failed with status {response.status}")
+                        log.error(f"Upload failed with status {response.status}")
                         return None
         except Exception as e:
-            print(f"Error uploading transcript: {e}")
+            log.error(f"Error uploading transcript: {e}")
             return None
 
     async def cog_load(self):
         """Add persistent views when the cog loads"""
         self.bot.add_view(TicketView())
         self.bot.add_view(TicketControlView())
-        print("Ticket views added!")
+        log.info("Ticket views added!")
 
     @commands.Cog.listener()
     async def on_ready(self):
-        print("Ticket system loaded!")
+        log.info("Ticket system loaded!")
 
     @app_commands.command(name="ticket-panel", description="Create a ticket panel")
     @app_commands.describe(channel="The channel to send the ticket panel to")
