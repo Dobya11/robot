@@ -1,10 +1,12 @@
 import aiomysql
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
-import json
+import logging
+
+log = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self, host: str = "localhost", port: int = 3306, 
+    def __init__(self, host: str = "localhost", port: int = 3306,
                  user: str = "root", password: str = "", database: str = "moderation"):
         self.host = host
         self.port = port
@@ -66,9 +68,8 @@ class Database:
                 
                 await cursor.execute("""
                     CREATE TABLE IF NOT EXISTS upvotes (
-                        user_id BIGINT NOT NULL,
-                        showcase_id BIGINT NOT NULL,
-                        PRIMARY KEY (user_id, showcase_id)
+                        showcase_id BIGINT NOT NULL PRIMARY KEY,
+                        count INT NOT NULL DEFAULT 0
                     ) ENGINE=InnoDB
                 """)
 
@@ -134,6 +135,65 @@ class Database:
                     ) ENGINE=InnoDB
                 """)
 
+        finally:
+            conn.close()
+
+        await self.run_migrations()
+
+    async def run_migrations(self):
+        migrations = (
+            self.migration_001_upvotes_by_count,
+        )
+
+        for migration in migrations:
+            name = migration.__name__
+
+            try:
+                was_applied = await migration()
+                if was_applied:
+                    log.info(f"Applied migration: {name}")
+            except Exception:
+                log.error(f"Tried to apply migration {name} but failed. The migration can be safely re-run after the issue is fixed.")
+                raise
+
+    async def migration_001_upvotes_by_count(self) -> bool:
+        """Migrate upvotes table from a user-showcase schema to a showcase with count schema"""
+        conn = await self.get_connection()
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = %s AND table_name = 'upvotes'
+                    ORDER BY ORDINAL_POSITION
+                """, (self.database,))
+                columns = {row[0] for row in await cursor.fetchall()}
+                is_old_schema = columns == {'user_id', 'showcase_id'}
+
+                if not is_old_schema:
+                    return False
+
+                await cursor.execute("DROP TABLE IF EXISTS migration_001_upvotes_new")
+                await cursor.execute("""
+                    CREATE TABLE migration_001_upvotes_new (
+                        showcase_id BIGINT NOT NULL PRIMARY KEY,
+                        count INT NOT NULL DEFAULT 0
+                    ) ENGINE=InnoDB
+                """)
+                await cursor.execute("""
+                    INSERT INTO migration_001_upvotes_new (showcase_id, count)
+                    SELECT showcase_id, COUNT(*) AS count
+                    FROM upvotes
+                    GROUP BY showcase_id
+                """)
+
+                await cursor.execute("""
+                    RENAME TABLE
+                        upvotes TO migration_001_upvotes_backup,
+                        migration_001_upvotes_new TO upvotes
+                """)
+
+                return True
         finally:
             conn.close()
     
@@ -232,15 +292,15 @@ class Database:
                 return row[0] if row else None
         finally:
             conn.close()
-        
-    async def log_upvote(self, user_id: int, showcase_id: int):
+
+    async def set_upvotes(self, showcase_id: int, count: int):
         conn = await self.get_connection()
         try:
             async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "INSERT IGNORE INTO upvotes (user_id, showcase_id) VALUES (%s, %s)",
-                    (user_id, showcase_id)
-                )
+                await cursor.execute("""
+                    INSERT INTO upvotes (showcase_id, count) VALUES (%s, %s)
+                        ON DUPLICATE KEY UPDATE count = %s
+                """, (showcase_id, count, count))
         finally:
             conn.close()
 
@@ -249,48 +309,22 @@ class Database:
         try:
             async with conn.cursor() as cursor:
                 await cursor.execute(
-                    "SELECT COUNT(*) FROM upvotes WHERE showcase_id = %s",
+                    "SELECT count FROM upvotes WHERE showcase_id = %s",
                     (showcase_id,)
                 )
                 row = await cursor.fetchone()
                 return row[0] if row else 0
         finally:
             conn.close()
-        
-    async def has_user_upvoted(self, user_id: int, showcase_id: int) -> bool:
-        conn = await self.get_connection()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT 1 FROM upvotes WHERE user_id = %s AND showcase_id = %s",
-                    (user_id, showcase_id)
-                )
-                row = await cursor.fetchone()
-                return row is not None
-        finally:
-            conn.close()
-    
-    async def remove_upvote(self, user_id: int, showcase_id: int) -> bool:
-        conn = await self.get_connection()
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "DELETE FROM upvotes WHERE user_id = %s AND showcase_id = %s",
-                    (user_id, showcase_id)
-                )
-                return cursor.rowcount > 0
-        finally:
-            conn.close()
-        
+
     async def get_top_5_showcases(self) -> List[Dict]:
         conn = await self.get_connection()
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute("""
-                    SELECT showcase_id, COUNT(*) as upvote_count
+                    SELECT showcase_id, count AS upvote_count
                     FROM upvotes
-                    GROUP BY showcase_id
-                    ORDER BY upvote_count DESC
+                    ORDER BY count DESC
                     LIMIT 5
                 """)
                 return await cursor.fetchall()

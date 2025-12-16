@@ -32,7 +32,12 @@ async def on_ready():
     password = os.getenv("DB_PASSWORD")
     database = os.getenv("DB_NAME")
     bot.database = Database(host, port, user, password, database)
-    await bot.database.init_db()
+    try:
+        await bot.database.init_db()
+    except Exception as e:
+        log.critical(f"A critical error occurred while initializing the database: {e}")
+        await bot.close()
+        return
 
     await load_cogs()
     log.info(f"{bot.user} is ready!")

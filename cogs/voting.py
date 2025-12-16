@@ -40,11 +40,9 @@ class Voting(commands.Cog):
                     break
             
             if fire_reaction:
-                async for user in fire_reaction.users():
-                    if not user.bot:
-                        await self.db.log_upvote(user.id, message.id)
-                        
-                log.debug(f"Updated message {message.id} with {fire_reaction.count - 1} upvotes")
+                reaction_count_exclude_bot = max(fire_reaction.count - 1, 0)
+                await self.db.set_upvotes(message.id, reaction_count_exclude_bot)
+                log.debug(f"Updated message {message.id} with {reaction_count_exclude_bot} upvotes")
             
             message_count += 1
             
@@ -68,17 +66,13 @@ class Voting(commands.Cog):
     
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
-        if user.bot:
-            return
-        
-        if reaction.message.channel.id != 1440185755745124503:
-            return
-        
-        if str(reaction.emoji) == '🔥':
-            await self.db.log_upvote(user.id, reaction.message.id)
-        
+        await self.handle_reaction_change(reaction, user)
+
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.User):
+        await self.handle_reaction_change(reaction, user)
+
+    async def handle_reaction_change(self, reaction: discord.Reaction, user: discord.User):
         if user.bot:
             return
         
@@ -86,7 +80,8 @@ class Voting(commands.Cog):
             return
         
         if str(reaction.emoji) == '🔥':
-            await self.db.remove_upvote(user.id, reaction.message.id)
+            reaction_count_exclude_bot = max(reaction.count - 1, 0)
+            await self.db.set_upvotes(reaction.message.id, reaction_count_exclude_bot)
 
     @tasks.loop(seconds=30)
     async def update_votes(self):
