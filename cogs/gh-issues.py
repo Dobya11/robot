@@ -10,6 +10,7 @@ class GitHubIssues(commands.Cog):
             'site': 'hytalemodding/site',
             'robot': 'hytalemodding/robot',
             'archive': 'hytalemodding/archive',
+            'patcher': 'hytalemodding/patcher'
         }
         self.github_api_base = 'https://api.github.com/repos'
         
