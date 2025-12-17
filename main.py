@@ -32,6 +32,7 @@ async def on_ready():
     password = os.getenv("DB_PASSWORD")
     database = os.getenv("DB_NAME")
     bot.database = Database(host, port, user, password, database)
+    bot.staff_role = bot.get_guild(1440173445039132724).get_role(1440793371529449614) # TODO: optimize
     try:
         await bot.database.init_db()
     except Exception as e:
