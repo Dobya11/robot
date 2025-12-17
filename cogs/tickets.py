@@ -27,7 +27,7 @@ class TicketView(discord.ui.View):
             clean_username = f"user{user.id}"
         
         cog = interaction.client.get_cog('Tickets')
-        db = cog.bot.db
+        db = cog.bot.database
         
         existing_tickets = await db.get_user_tickets(guild.id, user.id, 1)
         if existing_tickets and any(ticket['status'] == 'open' for ticket in existing_tickets):
@@ -107,7 +107,7 @@ class ConfirmCloseView(discord.ui.View):
     async def confirm_close(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = interaction.channel
         cog = interaction.client.get_cog('Tickets')
-        db = cog.bot.db
+        db = cog.bot.database
         
         ticket_info = await db.get_ticket_by_channel(channel.id)
         if not ticket_info:
